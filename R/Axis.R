@@ -1,7 +1,7 @@
 #' @include AllGeneric.R
-roxygen()
+NULL
 #' @include AllClass.R
-roxygen()
+NULL
 
 
 None <- new("NamedAxis", axis="None")
@@ -16,8 +16,6 @@ ANT_POST   <- new("NamedAxis", axis="Anterior-to-Posterior", direction=c(0,-1,0)
 POST_ANT   <- new("NamedAxis", axis="Posterior-to-Anterior", direction=c(0,1,0))
 INF_SUP    <- new("NamedAxis", axis="Inferior-to-Superior", direction=c(0,0,1))
 SUP_INF    <- new("NamedAxis", axis="Superior-to-Inferior", direction=c(0,0,-1))
-
-
 
 
 matchAxis <- function(firstAxis) {
@@ -52,19 +50,12 @@ AxisSet3D <- function(i, j, k) {
 #' @export
 #' @rdname permMat-methods
 setMethod(f="permMat", signature=signature(x = "AxisSet2D"),
-          def=function(x) { 
+          def=function(x, ...) { 
             cbind(x@i@direction, x@j@direction)
           })
 
-#' permMat
-#' @export
-#' @rdname permMat-methods
-setMethod(f="permMat", signature=signature(x = "AxisSet3D"),
-          def=function(x) { 
-            cbind(x@i@direction, x@j@direction, x@k@direction)
-          })
 
-#' dropDim
+
 #' @export
 #' @rdname dropDim-methods
 setMethod(f="dropDim", signature=signature(x = "AxisSet2D", dimnum="numeric"),
@@ -79,15 +70,15 @@ setMethod(f="dropDim", signature=signature(x = "AxisSet2D", dimnum="numeric"),
             }
           })
 
-#' dropDim
+
 #' @export
 #' @rdname dropDim-methods
 setMethod(f="dropDim", signature=signature(x = "AxisSet2D", dimnum="missing"),
-          def=function(x) {
+          def=function(x, dimnum) {
             AxisSet1D(x@i)
           })
 
-#' dropDim
+
 #' @export
 #' @rdname dropDim-methods
 setMethod(f="dropDim", signature=signature(x = "AxisSet3D", dimnum="numeric"),
@@ -104,36 +95,45 @@ setMethod(f="dropDim", signature=signature(x = "AxisSet3D", dimnum="numeric"),
             }
           })
 
-#' dropDim
+
 #' @export
 #' @rdname dropDim-methods
 setMethod(f="dropDim", signature=signature(x = "AxisSet3D", dimnum="missing"),
-          def=function(x) {
-            AxisSet2D(x@i, x@j)
-          })
-          
-          
-          
-#' @rdname ndim-methods
+           def=function(x, dimnum) {
+             AxisSet2D(x@i, x@j)
+           })
+           
+       
+
+        
 #' @export
-setMethod(f="ndim",signature=signature(x= "AxisSet"), def=function(x) { x@ndim })
+#' @rdname ndim-methods
+setMethod(f="ndim",signature=signature(x= "AxisSet"), 
+          def=function(x, ...) { 
+            x@ndim 
+          })
 
 
-
+#' show an \code{NamedAxis}
+#' @param object the object
+#' @export
 setMethod(f="show", signature=signature("NamedAxis"), 
 		def=function(object) {
 			cat(print(object@axis))
 		})
 
-#' print a \code{NamedAxis} instance
+#' print a \code{NamedAxis}
+#' @param x the object
+#' @param ... extra arguments
 #' @export
-#' @rdname print-methods
 setMethod(f="print", signature=signature("NamedAxis"), 
 		def=function(x, ...) {
 			x@axis
 		})
 
-
+#' show an \code{AxisSet1D}
+#' @param object the object
+#' @export
 setMethod(f="show", signature=signature("AxisSet1D"), 
 		def=function(object) {
 			cat("instance of class:", class(object), "\n\n")
@@ -141,14 +141,17 @@ setMethod(f="show", signature=signature("AxisSet1D"),
 		})
 
 #' print a \code{AxisSet2D} instance
+#' @param x the object
+#' @param ... extra args
 #' @export
-#' @rdname print-methods
 setMethod(f="print", signature=signature("AxisSet2D"), 
 		def=function(x, ...) {
 			paste(x@i@axis, "-", x@j@axis)
 		})
 
-
+#' show an \code{AxisSet2D}
+#' @param object the object
+#' @export
 setMethod(f="show", signature=signature("AxisSet2D"), 
 		def=function(object) {
 			cat("instance of class:", class(object), "\n\n")
@@ -157,15 +160,18 @@ setMethod(f="show", signature=signature("AxisSet2D"),
 		})
 
 #' print a \code{AxisSet3D} instance
+#' @param x the object
+#' @param ... extra args
 #' @export
-#' @rdname print-methods
 setMethod(f="print", signature=signature("AxisSet3D"), 
 		def=function(x, ...) {
 			paste(x@i@axis, " -- ", x@j@axis, " -- ", x@k@axis)
 		})
 
 
-
+#' show an \code{AxisSet3D}
+#' @param object the object
+#' @export
 setMethod(f="show", signature=signature("AxisSet3D"), 
 		def=function(object) {
 			cat("instance of class:", class(object), "\n\n")
@@ -174,8 +180,9 @@ setMethod(f="show", signature=signature("AxisSet3D"),
 			cat("Axis 3:", object@k@axis, "\n")
 		})
 
-
-
+#' show an \code{AxisSet4D}
+#' @param object the object
+#' @export
 setMethod(f="show", signature=signature("AxisSet4D"), 
 		def=function(object) {
 			cat("instance of class:", class(object), "\n\n")
@@ -278,7 +285,7 @@ OrientationList3D <- list(
 #' given three named axes return AxisSet3D singleton
 #' @param axis1 the first axis
 #' @param axis2 the second axis
-#' @param axis3 the thrid axis	
+#' @param axis3 the third axis	
 #' @export 
 matchAnatomy3D <- function(axis1, axis2, axis3) {
 	for (orient in OrientationList3D) {
@@ -295,7 +302,7 @@ matchAnatomy3D <- function(axis1, axis2, axis3) {
 #' given two named axes return AxisSet2D singleton
 #' @param axis1 the first axis
 #' @param axis2 the second axis
-#' @export matchAnatomy2D 
+#' @export  
 matchAnatomy2D <- function(axis1, axis2) {
 	for (orient in OrientationList2D) {
 		if (identical(orient@i,axis1) && identical(orient@j,axis2)) {

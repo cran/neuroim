@@ -1,21 +1,115 @@
 #' @import abind
 NULL
 
+
+#' matrixToVolumeList
+#' converts a matrix to a list of BrainVolumes with values filled at grid coordinates determined by the \code{vox} argument.
+#' @param voxmat an N by 3 matrix of voxel coordinates
+#' @param mat an N by M matrix of values where M is the number of volumes to create (e.g. one volume per column in \code{mat})
+#' @param mask a reference volume defining the geometry of the output volumes. This can either be of type \code{BrainSpace} or \code{BrainVolume}
+#' @param default the value that will be used for voxels not contained within voxmat (defualt is \code{NA})
+#' @return a \code{list} of \code{BrainVolume} instances, one for each column of \code{mat}
+#' @export  
+matrixToVolumeList <- function(voxmat, mat, mask, default=NA) {
+  if (nrow(voxmat) != nrow(mat)) {
+    stop("mismatching dimensions: nrow(voxmat) must equal nrow(mat)")
+  }
+  lapply(1:ncol(mat), function(i) {
+    vol <- array(default, dim(mask))   
+    vol[voxmat] <- mat[,i]
+    
+    if (is(mask, "BrainSpace")) {
+      BrainVolume(vol, mask)
+    } else {
+      BrainVolume(vol, space(mask))
+    }
+  })
+}  
+
+#' @export
+#' @rdname splitReduce-methods
+setMethod(f="splitReduce", signature=signature(x = "matrix", fac="integer", FUN="function"),
+          def=function(x, fac, FUN) {
+            callGeneric(x,as.factor(fac), FUN)
+          })
+
+#' @export
+#' @rdname splitReduce-methods
+setMethod(f="splitReduce", signature=signature(x = "matrix", fac="integer", FUN="missing"),
+          def=function(x, fac) {
+            callGeneric(x,as.factor(fac))
+          })
+
+#' @export
+#' @rdname splitReduce-methods
+setMethod(f="splitReduce", signature=signature(x = "matrix", fac="factor", FUN="missing"),
+          def=function(x, fac) {
+            if (length(fac) != nrow(x)) {
+              stop(paste("x must be same length as factor used for splitting rows"))
+            }
+            
+            ind <- split(seq_along(fac), fac)
+            out <- do.call(rbind, lapply(levels(fac), function(lev) {
+              colMeans(x[ind[[lev]],])
+            }))
+            
+            row.names(out) <- levels(fac)           
+            out
+          })
+
 #' @export
 #' @rdname splitReduce-methods
 setMethod(f="splitReduce", signature=signature(x = "matrix", fac="factor", FUN="function"),
           def=function(x, fac, FUN) {
             if (length(fac) != nrow(x)) {
               stop(paste("x must be same length as split variable"))
-            }
+            }        
             
-            out <- do.call(rbind, lapply(levels(fac), function(lev) {
-              keep <- fac == lev
-              apply(x[keep,], 2, FUN)
+            ind <- split(seq_along(fac), fac)
+            out <- do.call(rbind, lapply(names(ind), function(lev) {
+              apply(x[ind[[lev]],], 2, FUN)
             }))
+            
             row.names(out) <- levels(fac)           
             out
           })
+
+#' @export
+#' @rdname splitReduce-methods
+setMethod(f="splitReduce", signature=signature(x = "BrainVector", fac="factor", FUN="function"),
+          def=function(x, fac, FUN) {
+            if (length(fac) != prod(dim(x)[1:3])) {
+              stop(paste("fac must have as many elements as the number of voxels"))
+            }
+            
+            ind <- split(seq_along(fac), fac)
+            out <- do.call(rbind, lapply(names(ind), function(lev) {
+              #idx <- which(fac == lev)
+              mat <- series(x, ind[[lev]])
+              apply(mat, 1, FUN)
+            }))
+            
+            row.names(out) <- levels(fac)           
+            out
+          })
+
+#' @export
+#' @rdname splitReduce-methods
+setMethod(f="splitReduce", signature=signature(x = "BrainVector", fac="factor", FUN="missing"),
+          def=function(x, fac, FUN) {
+            if (length(fac) != prod(dim(x)[1:3])) {
+              stop(paste("fac must have as many elements as the number of voxels"))
+            }
+            
+            ind <- split(seq_along(fac), fac)
+            out <- do.call(rbind, lapply(names(ind), function(lev) {
+              rowMeans(series(x, ind[[lev]]))
+            }))
+            
+            row.names(out) <- levels(fac)           
+            out
+          })
+
 
 #' 
 #' @export
@@ -27,8 +121,10 @@ setMethod(f="splitScale", signature=signature(x = "matrix", f="factor", center="
             }
             
             out <- matrix(0, nrow(x), ncol(x))
-            for (lev in levels(f)) {
-              keep <- f == lev
+            ind <- split(seq_along(f), f)
+            
+            for (lev in names(ind)) {
+              keep <- ind[[lev]]
               xs <- scale(x[keep,,drop=FALSE], center=center, scale=scale)
               out[keep,] <- xs         
             }
@@ -75,11 +171,12 @@ setMethod(f="splitScale", signature=signature(x = "matrix", f="factor", center="
 	
 	new.dim <- c(D, NVOLS)
 	
-	nspace <- BrainSpace(new.dim, origin(x@space), spacing(x@space),
-			axes(x@space), trans(x@space))
+	nspace <- BrainSpace(new.dim, origin=origin(x@space), spacing=spacing(x@space),
+			axes=axes(x@space), trans=trans(x@space))
 	
 	ret <- DenseBrainVector(ndat, nspace)
 	
+  ## TODO fix me ridiculously slow
 	if (length(rest) > 0) {
 		for (i in seq_along(rest)) {
 			ret <- concat(ret, rest[[i]])
@@ -131,14 +228,18 @@ setMethod(f="splitScale", signature=signature(x = "matrix", f="factor", center="
 
 #' .gridToIndex3D
 #' @rdname internal-methods
+#' @importFrom assertthat assert_that
 #' @keywords internal
-.gridToIndex3D <- function(dimensions, vmat) {
-	stopifnot(length(dimensions) == 3)
-	slicedim = dimensions[1]*dimensions[2]
-	
-	apply(vmat, 1, function(vox) {
-				(slicedim*(vox[3]-1)) + (vox[2]-1)*dimensions[1] + vox[1]   
-	})	
+.gridToIndex3D <- function(dimensions, voxmat) {
+	assert_that(length(dimensions) == 3)
+  if (is.vector(voxmat)) {
+    assert_that(length(voxmat) == 3)
+    voxmat <- matrix(voxmat, 1,3)
+  }
+  
+  assert_that(ncol(voxmat) == 3)
+  gridToIndex3DCpp(dimensions, voxmat)
+
 }
 
 #' .gridToIndex
@@ -158,22 +259,31 @@ setMethod(f="splitScale", signature=signature(x = "matrix", f="factor", center="
 #' @rdname internal-methods
 #' @keywords internal
 .indexToGrid <- function(idx, array.dim) {
-	stopifnot(all(idx > 0 & idx <= prod(array.dim)))
-	rank = length(array.dim)
-	wh1 = idx-1
-	wh = 1 + wh1 %% array.dim[1]
-	wh = rep(wh, rank)
-	if (rank >=2) {
-		denom = 1
-		for (i in 2:rank) {
-			denom = denom * array.dim[i-1]
-			nextd1 = wh1%/%denom
-			wh[i] = 1 + nextd1%%array.dim[i]
-		}
-	}
-	wh
-	
+  assert_that(all(idx > 0 & idx <= prod(array.dim)))
+  assert_that(length(array.dim) <= 5)
+  indexToGridCpp(idx, array.dim)
+  
 }
+
+#' .indexToGrid
+#' @rdname internal-methods
+#' @keywords internal
+#.indexToGrid <- function(idx, array.dim) {
+#	stopifnot(all(idx > 0 & idx <= prod(array.dim)))
+#	rank = length(array.dim)
+#	wh1 = idx-1
+#	wh = 1 + wh1 %% array.dim[1]
+#	wh = rep(wh, rank)
+#	if (rank >=2) {
+#		denom = 1
+#		for (i in 2:rank) {
+#			denom = denom * array.dim[i-1]
+#			nextd1 = wh1%/%denom
+#			wh[i] = 1 + nextd1%%array.dim[i]
+#		}
+#	}
+#	wh
+#}
 
 #' .getRStorage
 #' @rdname internal-methods

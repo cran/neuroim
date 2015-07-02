@@ -35,7 +35,7 @@
 SparseBrainVectorSource <- function(metaInfo, indices, mask) {
   
 	
-	stopifnot(length(dim(metaInfo)) == 4)
+	stopifnot(length(dim(metaInfo)) >= 3)
 	stopifnot(all(indices >= 1 & indices <= dim(metaInfo)[4]))
 	
 	D <- dim(metaInfo)[1:3]
@@ -55,7 +55,7 @@ SparseBrainVectorSource <- function(metaInfo, indices, mask) {
 	}
 	
   if (!inherits(mask, "LogicalBrainVolume")) {
-    mspace <- BrainSpace(dim(mask), metaInfo@origin, metaInfo@spacing, metaInfo@spatialAxes)
+    mspace <- BrainSpace(dim(mask),  metaInfo@spacing, metaInfo@origin, metaInfo@spatialAxes)
     mask <- LogicalBrainVolume(mask, mspace)  	
   }
 	
@@ -75,6 +75,13 @@ SparseBrainVectorSource <- function(metaInfo, indices, mask) {
 #' @param source the data source -- an instance of class \code{\linkS4class{BrainSource}}
 #' @param label associated sub-image labels
 #' @export 
+#' @examples 
+#' 
+#' bspace <- BrainSpace(c(10,10,10,100), c(1,1,1))
+#' mask <- array(rnorm(10*10*10) > .5, c(10,10,10))
+#' mat <- matrix(rnorm(sum(mask)), 100, sum(mask))
+#' svec <- SparseBrainVector(mat, bspace,mask)
+#' length(indices(svec)) == sum(mask)
 #' @rdname SparseBrainVector-class 	
 SparseBrainVector <- function(data, space, mask, source=NULL, label="") {
 	stopifnot(inherits(space, "BrainSpace"))
@@ -108,22 +115,20 @@ SparseBrainVector <- function(data, space, mask, source=NULL, label="") {
 		space <- addDim(space, nrow(data))
 	}
 				
-  	stopifnot(ndim(space) == 4)
+  stopifnot(ndim(space) == 4)
 	
 	if (is.null(source)) {
 		meta <- BrainMetaInfo(dim(space), spacing(space), origin(space), "FLOAT", label)
 		source <- new("BrainSource", metaInfo=meta)	
 	}
-		
-  
-  	new("SparseBrainVector", source=source, space=space, mask=mask, data=data, map=IndexLookupVolume(space(mask), as.integer(which(mask))))
+	 
+	new("SparseBrainVector", source=source, space=space, mask=mask, data=data, map=IndexLookupVolume(space(mask), as.integer(which(mask))))
   
 }
 
 
 
-#' loadData
-#' 
+
 #' @export
 #' @rdname loadData-methods 
 setMethod(f="loadData", signature=c("SparseBrainVectorSource"), 
@@ -131,7 +136,7 @@ setMethod(f="loadData", signature=c("SparseBrainVectorSource"),
 			
 			### considerable code duplication with BrainVectorSource#loadData
 			meta <- x@metaInfo
-			stopifnot(length(meta@Dim) == 4)
+			#stopifnot(length(meta@Dim) == 4)
 			
 			meta <- x@metaInfo
 			nels <- prod(meta@Dim[1:3]) 		
@@ -157,14 +162,13 @@ setMethod(f="loadData", signature=c("SparseBrainVectorSource"),
 			#}
 			
 			arr <- do.call(rbind, datlist)		
-			bspace <- BrainSpace(c(meta@Dim[1:3], length(ind)), meta@origin, meta@spacing, meta@spatialAxes)
+			bspace <- BrainSpace(c(meta@Dim[1:3], length(ind)), meta@spacing, meta@origin, meta@spatialAxes)
 			SparseBrainVector(arr, bspace, x@mask)
 			
 		})
 
-#' indices
 #' @export
-#' @rdname indices-methods          
+#' @rdname indices-methods
 setMethod(f="indices", signature=signature(x="SparseBrainVector"),
           def=function(x) {
             indices(x@map)
@@ -187,8 +191,7 @@ setMethod(f="indices", signature=signature(x="SparseBrainVector"),
 #            indexToGrid(space(mask), i)
 #          })
             
-#' coords
-#'            
+            
 #' @export 
 #' @rdname coords-methods             
 setMethod(f="coords", signature=signature(x="SparseBrainVector"),
@@ -199,12 +202,11 @@ setMethod(f="coords", signature=signature(x="SparseBrainVector"),
             coords(x@map, i)            
           })            
 
-#' eachVolume
-#' 
+ 
 #' @export
 #' @rdname eachVolume-methods
-setMethod("eachVolume", signature=signature(x="SparseBrainVector", FUN="function", withIndex="logical"),
-		def=function(x, FUN, withIndex=FALSE, ...) {
+setMethod("eachVolume", signature=signature(x="SparseBrainVector", FUN="function", withIndex="logical", mask="missing"),
+		def=function(x, FUN, withIndex=FALSE, mask, ...) {
 			lapply(1:nrow(x@data), function(i) {
 				if (withIndex) {
 					FUN(takeVolume(x, i), i,...)
@@ -215,21 +217,35 @@ setMethod("eachVolume", signature=signature(x="SparseBrainVector", FUN="function
 		})
 
 
-#' eachVolume
-#' 
+
+
+ 
 #' @export
 #' @rdname eachVolume-methods
-setMethod("eachVolume", signature=signature(x="SparseBrainVector", FUN="function", withIndex="missing"),
+setMethod("eachVolume", signature=signature(x="SparseBrainVector", FUN="function", withIndex="missing", mask="missing"),
 		def=function(x, FUN, withIndex, ...) {
 			lapply(1:nrow(x@data), function(i) FUN(takeVolume(x, i), ...))					
 		})
 
+#' eachVolume
+#' 
+#' @export
+#' @rdname eachVolume-methods
+setMethod("eachVolume", signature=signature(x="SparseBrainVector", FUN="function", withIndex="missing", mask="LogicalBrainVolume"),
+          def=function(x, FUN, withIndex, mask, ...) {
+            mask.idx <- which(mask > 0)
+            lapply(1:nrow(x@data), function(i) FUN(takeVolume(x, i)[mask.idx], ...))					
+          })
+
   
 
 #' @export  
+#' @details when \code{x} is a \code{SparseBrainVector} \code{eachSeries} only iterates over nonzero series.
 #' @rdname eachSeries-methods 
 setMethod(f="eachSeries", signature=signature(x="SparseBrainVector", FUN="function", withIndex="logical"),
           def=function(x, FUN, withIndex=FALSE, ...) {
+            ## eachSeries only iterates over nonzero entries ...
+            
             ret <- list()
             if (withIndex) {
               idx <- indices(x)
@@ -248,7 +264,7 @@ setMethod(f="eachSeries", signature=signature(x="SparseBrainVector", FUN="functi
 
 
 #' @export  
-#' @rdname seriesIter-methods 
+#' @describeIn seriesIter get a seriesIter for a \code{\linkS4class{SparseBrainVector}} instance
 setMethod(f="seriesIter", signature=signature(x="SparseBrainVector"), 
 	def=function(x) {
 		len <- NCOL(x@data)
@@ -289,8 +305,7 @@ setMethod(f="seriesIter", signature=signature(x="SparseBrainVector"),
 #           callGeneric(x,idx)
 #         })
   
-#' series
-#' 
+ 
 #' @export
 #' @rdname series-methods 
 setMethod(f="series", signature=signature(x="SparseBrainVector", i="matrix"),
@@ -299,10 +314,11 @@ setMethod(f="series", signature=signature(x="SparseBrainVector", i="matrix"),
            callGeneric(x,idx)
          })
  
- #' series
- #' 
+
  #' @export
  #' @rdname series-methods 
+ #' @param j index for 2nd dimension
+ #' @param k index for 3rd dimension
  setMethod("series", signature(x="SparseBrainVector", i="numeric"),
 		 def=function(x,i, j, k) {	
 			 if (missing(j) && missing(k)) { 
@@ -325,8 +341,7 @@ setMethod(f="series", signature=signature(x="SparseBrainVector", i="matrix"),
 			
 		 })
  
-#' concat
-#' 
+
 #' @export           
 #' @rdname concat-methods 
 setMethod(f="concat", signature=signature(x="SparseBrainVector", y="SparseBrainVector"),
@@ -340,7 +355,7 @@ setMethod(f="concat", signature=signature(x="SparseBrainVector", y="SparseBrainV
             d2 <- dim(y)
             
             ndim <- c(d1[1:3], d1[4] + d2[4])
-            nspace <- BrainSpace(ndim, origin(x@space), spacing(x@space),  axes(x@space), trans(x@space))
+            nspace <- BrainSpace(ndim, spacing(x@space),  origin(x@space), axes(x@space), trans(x@space))
   
             
             ret <- SparseBrainVector(ndat, nspace, mask=x@mask)
@@ -354,8 +369,7 @@ setMethod(f="concat", signature=signature(x="SparseBrainVector", y="SparseBrainV
             
           })
           
-#'lookup
-#' 
+
 #' @export          
 #' @rdname lookup-methods          
 setMethod(f="lookup", signature=signature(x="SparseBrainVector", i="numeric"),
@@ -363,110 +377,129 @@ setMethod(f="lookup", signature=signature(x="SparseBrainVector", i="numeric"),
             lookup(x@map, i)
           })
 
-#' extract data from SparseBrainVector
-#' @param j index for dimension 2
-#' @param k index for dimension 3
-#' @param m index for dimension 4
-#' @param ... additional arguments
+
+#' extractor
+#' @export 
+#' @param x the object
+#' @param i first index 
+#' @param j second index 
+#' @param k third index 
+#' @param m the fourth index
+#' @param ... additional args
+#' @param drop dimension
 setMethod(f="[", signature=signature(x = "SparseBrainVector", i = "numeric", j = "missing"),
 		  def=function (x, i, j, k, m, ..., drop=TRUE) {  
 			  callGeneric(x, i, 1:(dim(x)[2]))
 		  }
   )
 
-#' extract data from SparseBrainVector
-#' @param j index for dimension 2
-#' @param k index for dimension 3
-#' @param m index for dimension 4
-#' @param ... additional arguments
+
+#' extractor
+#' @export 
+#' @param x the object
+#' @param i first index 
+#' @param j second index 
+#' @param k third index 
+#' @param m the fourth index
+#' @param ... additional args
+#' @param drop dimension
 setMethod(f="[", signature=signature(x = "SparseBrainVector", i = "missing", j = "missing"),
 		  def=function (x, i, j, k, m, ..., drop=TRUE) {  
 			  callGeneric(x, 1:(dim(x)[1]), 1:(dim(x)[2]))
 		  }
   )
   
-#' extract data from SparseBrainVector
-#' @param j index for dimension 2
-#' @param k index for dimension 3
-#' @param m index for dimension 4
-#' @param ... additional arguments
+
+#' extractor
+#' @export 
+#' @param x the object
+#' @param i first index 
+#' @param j second index 
+#' @param k third index 
+#' @param m the fourth index
+#' @param ... additional args
+#' @param drop dimension
 setMethod(f="[", signature=signature(x = "SparseBrainVector", i = "missing", j = "numeric"),
 		  def=function (x, i, j, k, m, ..., drop=TRUE) {  
 			  callGeneric(x, i:(dim(x)[1]), j)
 		  }
   )
 
-#' extract data from SparseBrainVector
-#' @param j index for dimension 2
-#' @param k index for dimension 3
-#' @param m index for dimension 4
-#' @param ... additional arguments
-setMethod(f="[", signature=signature(x = "SparseBrainVector", i = "numeric", j = "numeric"),
-          def=function (x, i, j, k, m, ..., drop=TRUE) {
-		    if (missing(k)) k = 1:(dim(x)[3])
-            if (missing(m)) m = 1:(dim(x)[4])
-			
-			vmat <- as.matrix(expand.grid(i,j,k,m))
-			ind <- .gridToIndex(dim(x)[1:3], vmat[,1:3,drop=FALSE])
-			
-			
-			mapped <- cbind(lookup(x, ind), m)
-			
-			
-			
-			vals <- unlist(apply(mapped, 1, function(i) {
-						if (i[1] == 0) { 
-							0
-						} else {
-							x@data[i[2], i[1]]
-							#x@data[i[1],i[2]]
-						}
-			}))
-			
-			dim(vals) <- c(length(i),length(j),length(k),length(m))
-			
-			if (drop) {
-				drop(vals)
-			} else {
-				vals
-			}
-			           
-          })
 
-#' takeVolume
-#' extract volume from SparseBrainVector
-#' 
+#' extractor
+#' @export 
+#' @param x the object
+#' @param i first index 
+#' @param j second index 
+#' @param k third index 
+#' @param m the fourth index
+#' @param ... additional args
+#' @param drop dimension
+setMethod(f="[", signature=signature(x = "SparseBrainVector", i = "numeric", j = "numeric"),
+          def = function (x, i, j, k, m, ..., drop = TRUE) {
+            if (missing(k))
+              k = 1:(dim(x)[3])
+             
+            vmat <- as.matrix(expand.grid(i,j,k,m))
+            ind <- .gridToIndex3D(dim(x)[1:3], vmat[,1:3,drop = FALSE])
+            
+            
+            mapped <- cbind(lookup(x, ind), m)
+            
+            
+            
+            vals <- unlist(apply(mapped, 1, function(i) {
+              if (i[1] == 0) {
+                0
+              } else {
+                x@data[i[2], i[1]]
+                #x@data[i[1],i[2]]
+              }
+            }))
+            
+            dim(vals) <- c(length(i),length(j),length(k),length(m))
+            
+            if (drop) {
+              drop(vals)
+            } else {
+              vals
+            }
+			           
+})
+
+
+
+ 
 #' @export
 #' @rdname takeVolume-methods
- setMethod(f="takeVolume", signature=signature(x="SparseBrainVector", i="numeric"),
-		  def=function(x, i, merge=FALSE) {
-			  idx <- which(x@mask > 0)
-			  
-			  bspace <- dropDim(space(x))
-			  
-			  makevol <- function(i) {				  
-				  bv <- BrainVolume(x@data[i,], bspace, indices=idx)
-			  }
-			  
-			  res <- lapply(i, makevol)
-			  
-			  if (length(res) > 1 && merge) {
-				  res <- do.call("concat", res)				
-			  }
-			  
-			  if (length(res) == 1) {
-				  res[[1]]
-			  } else {
-				  res
-			  }											
-		  })
-
-  
+setMethod(f="takeVolume", signature=signature(x="SparseBrainVector", i="numeric"),
+          def=function(x, i, merge=FALSE) {
+            idx <- which(x@mask > 0)      
+            bspace <- dropDim(space(x))
+             
+            res <- lapply(i, function(i) x@data[i,])
+       
+            if (length(res) > 1 && merge) {
+              res <- do.call("cbind", res)			
+              SparseBrainVector(res, bspace, x@mask)
+            } else {
+              if (length(res) == 1) {
+                BrainVolume(res[[1]], bspace, indices=idx)
+              } else {
+                lapply(res, function(x) BrainVolume(x, bspace, indices=idx))
+              }
+            }
+          })
 
 #' @export
 setAs(from="SparseBrainVector", to="matrix",
 		  function(from) {
-			  from@data			  
+		    ## TODO this should return a dense matrix
+		    ind <- indices(from)
+		    out <- matrix(dim(from)[4], length(ind))
+		    out[, ind] <- from@data
+		    out
+			  #from@data			  
 		  })
 
 #' as.matrix
@@ -480,7 +513,7 @@ setMethod(f="as.matrix", signature=signature(x = "SparseBrainVector"), def=funct
 
 #' as.list
 #' 
-#' convert SparseBrainVector to list of DenseBrainVolumes
+#' convert SparseBrainVector to list of \code{\linkS4class{DenseBrainVolume}}
 #' @rdname as.list-methods
 #' @export
 setMethod(f="as.list", signature=signature(x = "SparseBrainVector"), def=function(x) {
@@ -489,13 +522,16 @@ setMethod(f="as.list", signature=signature(x = "SparseBrainVector"), def=functio
 			
 })
 
-
+#' show a \code{SparseBrainVector}
+#' @param object the object
+#' @export
 setMethod("show",
           signature=signature(object="SparseBrainVector"),
           def=function(object) {
             cat("an instance of class",  class(object), "\n\n")
             cat("   dimensions: ", dim(object), "\n")
-            cat("   voxel spacing: ", spacing(object))
+            cat("   voxel spacing: ", spacing(object), "\n")
+            cat("   cardinality: ", length(object@map@indices))
             cat("\n\n")
             
           })

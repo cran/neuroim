@@ -1,4 +1,5 @@
 #' @import hash
+#' @importFrom assertthat assert_that
 #' @importFrom Matrix sparseVector
 #' @importFrom yaImpute ann
 NULL
@@ -19,12 +20,22 @@ NULL
 #' makeVolume
 #' 
 #' Construct a \code{\linkS4class{BrainVolume}} instance, using default (dense) implementation
-#' @param data a three-dimensional \code{array}
+#' @param data an optional one- or three-dimensional \code{vector} or \code{array}
 #' @param refvol an instance of class \code{\linkS4class{BrainVolume}} containing the reference space for the new volume.
-#' @param label a \code{character} string
-#' @param source an instance of class \code{\linkS4class{BrainSource}}
-#' @param indices an optional 1-d index vector
+#' @param label an optional \code{character} string
+#' @param source an optional instance of class \code{\linkS4class{BrainSource}}
+#' @param indices an optional 1d vector of indices in to the 3d space
 #' @return \code{\linkS4class{DenseBrainVolume}} instance 
+#' @examples
+#' bspace <- BrainSpace(c(64,64,64), spacing=c(1,1,1))
+#' dat <- array(rnorm(64*64*64), c(64,64,64))
+#' bvol <- BrainVolume(dat,bspace, label="test")
+#' bvol2 <- makeVolume(dat, bvol)
+#' all.equal(as.array(bvol),as.array(bvol2))
+#' data <- 1:10
+#' indices = seq(1,1000, length.out=10)
+#' bvol3 <- makeVolume(data,bvol,indices=indices)
+#' sum(bvol3) == sum(data)
 #' @export makeVolume
 makeVolume <- function(data=NULL, refvol, source=NULL, label="", indices=NULL) {
   if (is.null(data)) {
@@ -49,7 +60,7 @@ makeVolume <- function(data=NULL, refvol, source=NULL, label="", indices=NULL) {
 #' bvol <- BrainVolume(dat,bspace, label="test")
 #' print(bvol) 
 #' @export BrainVolume
-#' @rdname BrainVolume-class
+#' @rdname BrainVolume
 BrainVolume <- function(data, space, source=NULL, label="", indices=NULL) {
 	DenseBrainVolume(data,space,source=source, label=label, indices=indices)	
 }
@@ -70,6 +81,12 @@ DenseBrainVolume <- function(data, space, source=NULL, label="", indices=NULL) {
 	if (length(dim(space)) != 3) {
 		stop("DenseBrainVolume: space argument must have three dimensions")
 	} 
+  
+  if (is.matrix(data)) {
+    if (nrow(data) == 1 || ncol(data) == 1) {
+      data <- as.vector(data)
+    }
+  }
 	
 	if (length(data) == prod(dim(space)) && is.vector(data)) {
 		dim(data) <- dim(space)
@@ -104,14 +121,22 @@ DenseBrainVolume <- function(data, space, source=NULL, label="", indices=NULL) {
 #' 
 #' Construct a \code{\linkS4class{ClusteredBrainVolume}} instance
 #' @param mask an instance of class \code{\linkS4class{LogicalBrainVolume}}
-#' @param clusters a vector of clusters ids
-#' @param labelMap as \code{list} that maps from cluster id to a cluster label
-#' @param source an instance of class \code{\linkS4class{BrainSource}}
-#' @param label a \code{character} string
+#' @param clusters a vector of clusters ids with length equal to number of nonzero voxels in mask \code{mask}
+#' @param labelMap an optional \code{list} that maps from cluster id to a cluster label, e.g. (1 -> "FFA", 2 -> "PPA")
+#' @param source an optional instance of class \code{\linkS4class{BrainSource}}
+#' @param label an optional \code{character} string used to label of the volume
 #' @return \code{\linkS4class{ClusteredBrainVolume}} instance 
 #' @export ClusteredBrainVolume
+#' @examples
+#' 
+#' bspace <- BrainSpace(c(16,16,16), spacing=c(1,1,1))
+#' grid <- indexToGrid(bspace, 1:(16*16*16))
+#' kres <- kmeans(grid, centers=10)
+#' mask <- BrainVolume(rep(1, 16^3),bspace)
+#' clusvol <- ClusteredBrainVolume(mask, kres$cluster)
 #' @rdname ClusteredBrainVolume-class
 ClusteredBrainVolume <- function(mask, clusters, labelMap=NULL, source=NULL, label="") {
+  mask <- as(mask, "LogicalBrainVolume")
   space <- space(mask)
   ids <- sort(unique(clusters)) 
   
@@ -140,11 +165,12 @@ ClusteredBrainVolume <- function(mask, clusters, labelMap=NULL, source=NULL, lab
   clus.split <- split(clus.idx, clusters)
   clus.names <- names(clus.split)
   clusterMap <- hash()
+  
   for (i in 1:length(clus.split)) {
     clusterMap[[clus.names[[i]]]] <- clus.split[[clus.names[[i]]]]
-    
   }
-  new("ClusteredBrainVolume", mask=mask, clusters=clusters, labelMap=labelMap, clusterMap=clusterMap, source=source, space=space)
+  
+  new("ClusteredBrainVolume", mask=mask, clusters=as.integer(clusters), labelMap=labelMap, clusterMap=clusterMap, source=source, space=space)
 }
   
   
@@ -155,18 +181,27 @@ ClusteredBrainVolume <- function(mask, clusters, labelMap=NULL, source=NULL, lab
 #' Construct a \code{\linkS4class{SparseBrainVolume}} instance
 #' @param data a numeric vector 
 #' @param space an instance of class \code{\linkS4class{BrainSpace}}
+#' @param indices a index vector indicating the 1-d coordinates of the data values
 #' @param source an instance of class \code{\linkS4class{BrainSource}}
 #' @param label a \code{character} string
-#' @param indices a 1-d index vector
-#' @return \code{\linkS4class{DenseBrainVolume}} instance 
+#' @return \code{\linkS4class{SparseBrainVolume}} instance 
 #' @export SparseBrainVolume
+#' @examples
+#' data <- 1:10
+#' indices = seq(1,1000, length.out=10)
+#' bspace <- BrainSpace(c(64,64,64), spacing=c(1,1,1))
+#' sparsevol <- SparseBrainVolume(data,bspace,indices=indices)
+#' densevol <- BrainVolume(data,bspace,indices=indices)
+#' sum(sparsevol) == sum(densevol)
+#' 
 #' @rdname SparseBrainVolume-class
-SparseBrainVolume <- function(data, space, source=NULL, label="", indices=NULL) {
+SparseBrainVolume <- function(data, space, indices=NULL, source=NULL, label="") {
   if (length(indices) != length(data)) {
     stop(paste("length of 'data' must equal length of 'indices'"))
   }
   
   sv <- Matrix::sparseVector(x=data, i=indices, length=prod(dim(space)))
+  
   if (is.null(source)) {
     meta <- BrainMetaInfo(dim(space), spacing(space), origin(space), "FLOAT", label)
     source <- new("BrainSource", metaInfo=meta)
@@ -180,7 +215,7 @@ SparseBrainVolume <- function(data, space, source=NULL, label="", indices=NULL) 
 #' LogicalBrainVolume
 #' 
 #' Construct a \code{\linkS4class{LogicalBrainVolume}} instance
-#' @param data a three-dimensional \code{array}
+#' @param data a three-dimensional \code{array}, a 1D vector with length equal to \code{prod(dim(space))}, or a set of \code{indices} where elements are \code{TRUE}
 #' @param space an instance of class \code{\linkS4class{BrainSpace}}
 #' @param source an instance of class \code{\linkS4class{BrainSource}}
 #' @param label a \code{character} string
@@ -192,6 +227,10 @@ LogicalBrainVolume <- function(data, space, source=NULL, label="", indices=NULL)
 	
 	if (is.null(dim(data)) && length(data) == prod(dim(space))) {
 		data <- array(data, dim(space))
+	} else if (is.null(dim(data)) && !is.null(indices)) {
+	  newdat <- array(FALSE, dim(space))
+	  newdat[indices] <- data
+	  data <- newdat
 	}
 	
 	if (length(dim(data)) != 3) {
@@ -201,12 +240,6 @@ LogicalBrainVolume <- function(data, space, source=NULL, label="", indices=NULL)
 	if (ndim(space) != 3) {
 		stop("LogicalVolume: space argument must have three dimensions")
 	} 
-	
-	if (!is.null(indices)) {
-		newdat <- array(FALSE, dim(space))
-		newdat[indices] <- data
-		data <- newdat
-	}
 	
 	
 	if (!is.logical(data)) {
@@ -232,7 +265,7 @@ setAs(from="DenseBrainVolume", to="array", def=function(from) from@.Data)
 
 
 
-#' conversion from SparseBrainVolume to array
+#' conversion from \code{SparseBrainVolume} to \code{array}
 #' @rdname as-methods
 #' @name as
 setAs(from="SparseBrainVolume", to="array", def=function(from) {
@@ -251,6 +284,7 @@ setAs(from="SparseBrainVolume", to="numeric", def=function(from) {
 
 #' Convert SparseBrainVolume to numeric
 #' @rdname as.numeric-methods
+#' @param x the object to convert
 #' @export 
 setMethod(f="as.numeric", signature=signature(x = "SparseBrainVolume"), def=function(x) {
   as(x, "numeric")			
@@ -285,21 +319,21 @@ setAs(from="ClusteredBrainVolume", to="DenseBrainVolume", def=function(from) {
 #' @name as
 setAs(from="BrainVolume", to="array", def=function(from) from[,,])
 
-#' show
-#' @rdname show-methods
+#' show a \code{BrainVolume}
+#' @param object the object
+#' @export
 setMethod(f="show", signature=signature("BrainVolume"),
           def=function(object) {
             sp <- space(object)
             cat("BrainVolume\n")
             cat("  Type           :", class(object), "\n")
             cat("  Dimension      :", dim(object), "\n")
-            cat("  Spacing        :", paste(paste(sp@spacing[1:(length(sp@spacing)-1)], " X ", collapse=" "), 
+            cat("  Spacing        :", paste(paste(signif(sp@spacing[1:(length(sp@spacing)-1)],2), " X ", collapse=" "), 
                                             sp@spacing[length(sp@spacing)], "\n"))
-            cat("  Origin         :", paste(paste(sp@origin[1:(length(sp@origin)-1)], " X ", collapse=" "), 
+            cat("  Origin         :", paste(paste(signif(sp@origin[1:(length(sp@origin)-1)],2), " X ", collapse=" "), 
                                             sp@origin[length(sp@origin)], "\n"))
             cat("  Axes           :", paste(sp@axes@i@axis, sp@axes@j@axis,sp@axes@k@axis), "\n")
-            cat("  Coordinate Transform :", sp@trans, "\n")
-                       
+           
           }
 )
 
@@ -307,6 +341,7 @@ setMethod(f="show", signature=signature("BrainVolume"),
 #' load a BrainVolume
 #' @export loadData
 #' @rdname loadData-methods
+## TODO reduce code duplication with loadData#BrainVectorSource
 setMethod(f="loadData", signature=c("BrainVolumeSource"), 
 		def=function(x) {
 			
@@ -328,12 +363,13 @@ setMethod(f="loadData", signature=c("BrainVolumeSource"),
 			close(reader)
 			arr <- array(dat, meta@Dim[1:3])
 			
-			bspace <- BrainSpace(meta@Dim[1:3], meta@origin, meta@spacing, meta@spatialAxes, trans(meta))
+			bspace <- BrainSpace(meta@Dim[1:3], meta@spacing, meta@origin, meta@spatialAxes, trans(meta))
 			DenseBrainVolume(arr, bspace, x)
 					
 		})
 
 #' Constructor for BrainVolumeSource
+#' 
 #' @param input the input file name
 #' @param index the image subvolume index
 #' @export 
@@ -364,7 +400,8 @@ BrainVolumeSource <- function(input, index=1) {
 #' load an image volume from a file
 #' @param fileName the name of the file to load
 #' @param index the index of the volume (e.g. if the file is 4-dimensional)
-#' @return an instance of the class \code{\linkS4class{BrainVolume}}
+#' @return an instance of the class \code{\linkS4class{DenseBrainVolume}}
+#' 
 #' @examples
 #' fname <- system.file("extdata", "global_mask.nii", package="neuroim")
 #' x <- loadVolume(fname)
@@ -378,7 +415,6 @@ loadVolume  <- function(fileName, index=1) {
 }
 
 
-#' concatenate two BrainVolumes
 #' @note dimensions of x and y must be equal
 #' @export concat
 #' @rdname concat-methods
@@ -386,6 +422,15 @@ setMethod(f="concat", signature=signature(x="DenseBrainVolume", y="DenseBrainVol
 		def=function(x,y,...) {
 			.concat4D(x,y,...)			
 		})
+
+
+#' @export
+#' @rdname fill-methods
+setMethod(f="fill", signature=signature(x="BrainVolume", lookup="list"),
+          def=function(x,lookup) {
+            out <- lookup[unlist(x)]
+            DenseBrainVolume(unlist(out), space(x))
+          })
 
 #' @export
 #' @rdname fill-methods
@@ -397,17 +442,17 @@ setMethod(f="fill", signature=signature(x="BrainVolume", lookup="matrix"),
               stop("fill: lookup matrix have at least one row")
             }
             
-            out <- DenseBrainVolume(array(0, dim(x)), space(x))
+            out <- array(0, dim(x))
+            
             for (i in 1:nrow(lookup)) {
               idx <- which(x == lookup[i,1])
-              out[idx] <- lookup[i,2]             
+              out[idx] <- as.vector(lookup[i,2])             
             }
             
-            out
+            BrainVolume(out, space(x))
           })
 
-#' split values by factor apply function and then fill in new volume
-#' @note FUN can return one value per category or one value per voxel
+
 #' @export splitFill
 #' @rdname splitFill-methods
 setMethod(f="splitFill", signature=signature(x="BrainVolume", fac="factor", FUN="function"),
@@ -476,6 +521,7 @@ setMethod(f="indexToCoord", signature=signature(x="BrainVolume", idx="index"),
 #' @rdname coordToIndex-methods
 setMethod(f="coordToIndex", signature=signature(x="BrainVolume", coords="matrix"),
           def=function(x, coords) {
+            assert_that(ncol(coords) == 3)
             callGeneric(space(x), coords)
           })
 
@@ -501,8 +547,9 @@ setMethod(f="indexToGrid", signature=signature(x="BrainVolume", idx="index"),
 #' @rdname gridToIndex-methods
 setMethod(f="gridToIndex", signature=signature(x="BrainVolume", coords="matrix"),
           def=function(x, coords) {
+            assert_that(ncol(coords) == 3)
             array.dim <- dim(x)
-            .gridToIndex(dim(x), coords)
+            .gridToIndex3D(dim(x), coords)
           })
   
 
@@ -510,8 +557,9 @@ setMethod(f="gridToIndex", signature=signature(x="BrainVolume", coords="matrix")
 #' @rdname gridToIndex-methods
   setMethod(f="gridToIndex", signature=signature(x="BrainVolume", coords="numeric"),
 		  def=function(x, coords) {
+		    assert_that(length(coords) == 3)
 			  array.dim <- dim(x)
-			  .gridToIndex(dim(x), matrix(coords, nrow=1, byrow=TRUE))
+			  .gridToIndex3D(dim(x), matrix(coords, nrow=1, byrow=TRUE))
 		  })
 
  
@@ -573,7 +621,8 @@ setMethod(f="coordToGrid", signature=signature(x="BrainVolume", coords="matrix")
 	  
 }
 
-#' apply a kernel function to a BrainVolume
+#' apply a kernel function to a \code{\linkS4class{BrainVolume}}
+#' 
 #' @rdname map-methods
 #' @param mask restrict application of kernel to maksed area
 #' @export
@@ -631,7 +680,7 @@ setMethod(f="tesselate", signature=signature(x="LogicalBrainVolume", K="numeric"
             }
     
             kgrid <- kmeans(voxgrid, centers=K, iter.max=100)
-            ClusteredBrainVolume(x, kgrid$cluster)
+            ClusteredBrainVolume(x, kgrid$cluster, kgrid$centers)
           })
 
 
@@ -643,7 +692,7 @@ setMethod(f="numClusters", signature=signature(x="ClusteredBrainVolume"),
             length(x@clusterMap)
           })
 
-#' extract cluster centers in a ClusteredBrainVolume
+
 #' @rdname clusterCenters-methods
 #' @export
 setMethod(f="clusterCenters", signature=signature(x="ClusteredBrainVolume", features="matrix", FUN="missing"), 
@@ -825,12 +874,128 @@ setMethod(f="writeVolume",signature=signature(x="BrainVolume", fileName="charact
 
 #' as.logical
 #' 
-#' Convert BrainVolume to logical vector
+#' Convert BrainVolume to \code{linkS4class{LogicalBrainVolume}}
+#' 
+#' the image values will be converted to using R base function \code{as.logical} and wrapped in \code{LogicalBrainVolume}
+#' 
+#' @param x the object
+#' @return an instance of \code{linkS4class{LogicalBrainVolume}}
 #' @rdname as.logical-methods
 #' @export 
 setMethod(f="as.logical", signature=signature(x = "BrainVolume"), def=function(x) {
-			as.logical(as.vector(x))			
+			vals <- as.logical(as.vector(x))	
+			LogicalBrainVolume(vals, space(x))
 })
+
+#' @rdname as.sparse-methods
+setMethod(f="as.sparse", signature=signature(x="DenseBrainVolume", mask="LogicalBrainVolume"),
+          def=function(x, mask) {
+            assert_that(all(dim(x) == dim(mask)))
+            assert_that(all(spacing(x) == spacing(mask)))
+            
+            dat <- x[mask]
+            bvec <- SparseBrainVector(dat, space(x))
+            
+})
+
+#' @rdname as.sparse-methods
+setMethod(f="as.sparse", signature=signature(x="DenseBrainVolume", mask="numeric"),
+          def=function(x, mask) {
+            m <- as.integer(mask)
+            bvec <- SparseBrainVolume(x[m], space(x), indices=m)
+            
+          })
+
+
+
+#' extractor
+#' @export 
+#' @param x the object
+#' @param i first index 
+#' @param j second index 
+#' @param k third index 
+#' @param ... additional args
+#' @param drop dimension
+setMethod(f="[", signature=signature(x = "SparseBrainVolume", i = "numeric", j = "numeric", drop="ANY"),
+          def=function (x, i, j, k, ..., drop=TRUE) {  
+            if (missing(k)) {
+              k <- seq(1, dim(x)[3])
+            }
+            
+            n <- length(i) * length(j) * length(k)
+            mind <- cbind(rep(i, length.out=n), rep(j, each=length(i)), rep(k, each=length(i) * length(j)))
+            
+            ind <- gridToIndex(x, mind)
+            x@data[ind]
+            
+        })
+
+
+#' extractor
+#' @export
+#' @param x the object
+#' @param i first index 
+#' @param j second index 
+#' @param k third index 
+#' @param ... additional args
+#' @param drop drop dimension
+setMethod(f="[", signature=signature(x = "SparseBrainVolume", i = "numeric", j = "missing", drop="missing"),
+          def=function (x, i, j, k, ..., drop) {  
+            if (missing(k) && nargs() == 4) {
+              x@data[i]
+            } else {
+              callGeneric(x, i=i,  seq(1,dim(x)[2]), k, drop)
+            } 
+         }
+)
+
+#' extractor
+#' @export 
+#' @param x the object
+#' @param i first index 
+#' @param j second index 
+#' @param k third index 
+#' @param ... additional args
+#' @param drop dimension
+setMethod(f="[", signature=signature(x = "SparseBrainVolume", i = "matrix", j="missing", drop="ANY"),
+          def=function (x, i, j, k, ..., drop=TRUE) {  
+            ind <- gridToIndex(x,i)
+            x@data[ind]
+          }
+)
+
+#' extractor
+#' @export 
+#' @param x the object
+#' @param i first index 
+#' @param j second index 
+#' @param k third index 
+#' @param ... additional args
+#' @param drop dimension
+setMethod(f="[", signature=signature(x = "SparseBrainVolume", i = "missing", j = "missing", drop="ANY"),
+          def=function (x, i, j, k, ..., drop=TRUE) {  
+            if (missing(k)) {
+              x@data
+            } else {
+              callGeneric(x, seq(1, dim(x)[1]), seq(1, dim(x)[2]), k, ...)
+            }
+          }
+)
+
+#' extractor
+#' @export 
+#' @param x the object
+#' @param i first index 
+#' @param j second index 
+#' @param k third index 
+#' @param ... additional args
+#' @param drop dimension
+setMethod(f="[", signature=signature(x = "SparseBrainVolume", i = "missing", j = "numeric", drop="ANY"),
+          def=function (x, i, j, k,  ..., drop=TRUE) {  
+            callGeneric(x, seq(1, dim(x)[1]), j, k,...)
+          }
+)
+
 
 
             

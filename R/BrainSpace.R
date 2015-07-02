@@ -21,8 +21,7 @@
 #' origin(bspace)
 #' axes(bspace)
 #' trans(bspace)
-#' 
-BrainSpace <- function(Dim, origin=NULL, spacing=NULL, axes=NULL, trans=NULL) {
+BrainSpace <- function(Dim, spacing=NULL, origin=NULL, axes=NULL, trans=NULL) {
 	
 	if (is.null(spacing)) {
 		spacing <- rep(1, min(length(Dim), 3))
@@ -50,8 +49,9 @@ BrainSpace <- function(Dim, origin=NULL, spacing=NULL, axes=NULL, trans=NULL) {
 			inverseTrans=solve(trans))
 }
 
-
-
+#' show a \code{BrainSpace}
+#' @param object the object
+#' @export
 setMethod(f="show", signature=signature("BrainSpace"),
 		def=function(object) {
 			cat("BrainSpace\n")
@@ -77,7 +77,6 @@ setMethod(f="addDim", signature=signature(x = "BrainSpace", n="numeric"),
 		})
 
 
-#' dropDim
 #' @export
 #' @rdname dropDim-methods
 setMethod(f="dropDim", signature=signature(x = "BrainSpace", dimnum="missing"),
@@ -89,22 +88,20 @@ setMethod(f="dropDim", signature=signature(x = "BrainSpace", dimnum="missing"),
 			### doesn't drop dimension in transformation matrix...
       ### brain vector's don't have th axis and tese are incorrectly dropped
       if (ndim(x) == 4) {
-			  BrainSpace(D[Dind], origin(x)[Dind], spacing(x)[Dind], axes(x), trans(x))
+			  BrainSpace(D[Dind], origin=origin(x)[Dind], spacing=spacing(x)[Dind], axes=axes(x), trans=trans(x))
       } else {
-        BrainSpace(D[Dind], origin(x)[Dind], spacing(x)[Dind], dropDim(axes(x)), trans(x))
+        BrainSpace(D[Dind], origin=origin(x)[Dind], spacing=spacing(x)[Dind], axes=dropDim(axes(x)), trans=trans(x))
       }
 		})
 
 #' dim
 #' 
 #' @export
-#' @rdname dim-methods
-#' @aliases dim,BrainSpace,ANY-method
+#' @param x the object
 setMethod(f="dim", signature=signature(x = "BrainSpace"),
 		def=function(x) x@Dim)
 
-#' ndim
-#' 
+
 #' @export
 #' @rdname ndim-methods
 setMethod(f="ndim", signature=signature(x = "BrainSpace"),
@@ -124,45 +121,52 @@ setMethod(f="spacing", signature=signature(x = "BrainSpace"),
 setMethod(f="bounds", signature=signature(x = "BrainSpace"),
 		def=function(x) {
       direc <- diag(trans(x))
-      direc <- direc[1:(length(direc)-1)]
-			mat <- cbind(origin(x), origin(x)+(spacing(x)*dim(x)*direc))
+      direc <- sign(direc[1:(length(direc)-1)])
+			#mat <- cbind(x@origin, x@origin+(spacing(x)*dim(x)*direc))
+			mat <- cbind(x@origin, x@origin+(spacing(x)*dim(x)))
 			return(mat)
 		}
 )
 
-#' indexToGrid
-#' 
-#' @export indexToGrid
+ 
+#' @export 
 #' @rdname indexToGrid-methods
 setMethod(f="indexToGrid", signature=signature(x="BrainSpace", idx="index"),
           def=function(x, idx) {
             array.dim <- dim(x)          
-            t(sapply(idx, .indexToGrid, array.dim))            
+            .indexToGrid(idx, array.dim)        
           })
 
-#' indexToCoord
-#' 
+ 
 #' @export 
 #' @rdname indexToCoord-methods
 setMethod(f="indexToCoord", signature=signature(x="BrainSpace", idx="index"),
           def=function(x, idx) {
             grid <- indexToGrid(x, idx) - .5
             res <- trans(x) %*% t(cbind(grid, rep(1,nrow(grid))))
+            ## TODO assumes 3D coordinate
             t(res[1:3,])
           })
 
-#' coordToIndex
-#' 
+
 #' @export 
 #' @rdname coordToIndex-methods
 setMethod(f="coordToIndex", signature=signature(x="BrainSpace", coords="matrix"),
           def=function(x, coords) {
             grid = t(inverseTrans(x) %*% t(cbind(coords, rep(1, nrow(coords)))))
-            gridToIndex(x, grid[,1:3] + 1)
+            gridToIndex(x, grid[,1:3] + .5)
+          })
+ 
+#' @export 
+#' @rdname coordToIndex-methods
+setMethod(f="coordToIndex", signature=signature(x="BrainSpace", coords="numeric"),
+          def=function(x, coords) {
+            coords <- matrix(coords, nrow=1)
+            callGeneric(x,coords)
           })
 
-#' axisToIndex
-#' 
+
+
 #' @export 
 #' @rdname axisToIndex-methods
 setMethod(f="axisToIndex", signature=signature(x="BrainSpace", real="numeric", dimNum="numeric"),
@@ -172,9 +176,7 @@ setMethod(f="axisToIndex", signature=signature(x="BrainSpace", real="numeric", d
             floor(abs(real - bds[1])/(spacing(x)[dimNum]) + 1)
             
           })
-
-#' coordToGrid
-#' 
+ 
 #' @export 
 #' @rdname coordToGrid-methods
 setMethod(f="coordToGrid", signature=signature(x="BrainSpace", coords="matrix"),
@@ -183,70 +185,93 @@ setMethod(f="coordToGrid", signature=signature(x="BrainSpace", coords="matrix"),
             grid[,1:3]+ 1
           })
 
-#' gridToIndex
-#' 
+ 
+#' @export 
+#' @rdname coordToGrid-methods
+setMethod(f="coordToGrid", signature=signature(x="BrainSpace", coords="numeric"),
+          def=function(x, coords) {
+            coords <- matrix(coords, nrow=1)
+            callGeneric(x, coords)
+          })
+
+
+ 
+#' @export 
+#' @rdname gridToCoord-methods
+setMethod(f="gridToCoord", signature=signature(x="BrainSpace", coords="matrix"),
+          def=function(x, coords) {
+            input <- t(cbind(coords-1, rep(1, nrow(coords)))) 
+            ret <- t(trans(x) %*% input)
+            ret[,1:3,drop=FALSE]
+            
+          })
+
+
+#' @export 
+#' @rdname gridToCoord-methods
+setMethod(f="gridToCoord", signature=signature(x="BrainVolume", coords="matrix"),
+          def=function(x, coords) {
+            callGeneric(space(x), coords)
+            
+          })
+
+
+
 #' @export 
 #' @rdname gridToIndex-methods
 setMethod(f="gridToIndex", signature=signature(x="BrainSpace", coords="matrix"),
 		def=function(x, coords) {
 			array.dim <- dim(x)
+      ### TODO assumes 3D index ....
 			.gridToIndex3D(dim(x), coords)
 		})
 
-#' gridToIndex
-#' 
+ 
 #' @export 
 #' @rdname gridToIndex-methods
 setMethod(f="gridToIndex", signature=signature(x="BrainSpace", coords="numeric"),
 		def=function(x, coords) {
+		  ### TODO assumes 3D index ....
 			array.dim <- dim(x)
 			.gridToIndex3D(dim(x), matrix(coords, nrow=1, byrow=TRUE))
 		})
 
 
 
-#' origin
-#' 
+ 
 #' @export
 #' @rdname origin-methods
 setMethod(f="origin", signature=signature(x = "BrainSpace"),
 		def=function(x) x@origin)
 
 
-#' axes
-#' 
+ 
 #' @export
 #' @rdname axes-methods
 setMethod(f="axes", signature=signature(x = "BrainSpace"),
 		def=function(x) x@axes)
 
-#' trans
-#' 
+
 #' @export
 #' @rdname trans-methods
 setMethod(f="trans", signature=signature(x = "BrainSpace"),
 		def=function(x) x@trans)
 
-#' inverseTrans
-#' 
+ 
 #' @export
 #' @rdname inverseTrans-methods
 setMethod(f="inverseTrans", signature=signature(x = "BrainSpace"),
 		def=function(x) x@inverseTrans)
 
 
-## delegate methods
-
-#' bounds
-#' 
+ 
 #' @export
 #' @rdname bounds-methods
 setMethod(f="bounds", signature=signature(x = "BrainData"),
 		def=function(x) {
 			bounds(space(x))
 		})
-#' axes
-#' 
+
 #' @export
 #' @rdname axes-methods
 setMethod(f="axes", signature=signature(x = "BrainData"),
@@ -254,8 +279,7 @@ setMethod(f="axes", signature=signature(x = "BrainData"),
 			axes(space(x))
 		})
 
-#' origin
-#' 
+ 
 #' @export
 #' @rdname origin-methods
 setMethod(f="origin", signature=signature(x = "BrainData"),
@@ -264,16 +288,21 @@ setMethod(f="origin", signature=signature(x = "BrainData"),
 		})
 
 
-#' trans
-#' 
+#' @export
+#' @rdname space-methods
+setMethod(f="space", signature=signature(x = "BrainSpace"),
+          def=function(x) {
+           x
+          })
+
+ 
 #' @export
 #' @rdname trans-methods
 setMethod(f="trans", signature=signature(x = "BrainData"),
 		def=function(x) trans(space(x)))
 
 
-#' inverseTrans
-#' 
+
 #' @export
 #' @rdname inverseTrans-methods
 setMethod(f="inverseTrans", signature=signature(x = "BrainData"),
