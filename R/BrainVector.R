@@ -531,8 +531,7 @@ setMethod(f="show", signature=signature("BrainVector"),
 
 
 
-#' eachVolume
-#' 
+ 
 #' @rdname eachVolume-methods
 #' @export
 setMethod(f="eachVolume", signature=signature(x="BrainVector", FUN="function", withIndex="missing", mask="missing"),
@@ -540,8 +539,7 @@ setMethod(f="eachVolume", signature=signature(x="BrainVector", FUN="function", w
 			lapply(1:(dim(x)[4]), function(tt) FUN(x[,,,tt], ...))				
 		})
 
-#' eachVolume
-#' 
+
 #' @rdname eachVolume-methods
 #' @export
 setMethod(f="eachVolume", signature=signature(x="BrainVector", FUN="function", withIndex="missing", mask="BrainVolume"),
@@ -553,8 +551,7 @@ setMethod(f="eachVolume", signature=signature(x="BrainVector", FUN="function", w
             })
           })
 
-#' eachVolume
-#' 
+ 
 #' @rdname eachVolume-methods
 #' @export
 setMethod(f="eachVolume", signature=signature(x="BrainVector", FUN="function", withIndex="missing", mask="missing"),
@@ -599,6 +596,19 @@ setMethod("eachVolume", signature=signature(x="BrainVector", FUN="function", wit
 					})
 		})
 
+
+
+#' @rdname subVector-methods
+#' @export
+setMethod(f="subVector", signature=signature(x="DenseBrainVector", i="numeric"),
+          def=function(x, i) {
+            xs <- space(x)
+            dat <- x@.Data[,,,i]
+            
+            newdim <- c(dim(x)[1:3], length(i))
+            bspace <- BrainSpace(newdim, spacing=spacing(xs), origin=origin(xs), axes(xs), trans(xs))
+            DenseBrainVector(dat, bspace)
+          })
 
 
 #' @rdname takeVolume-methods
@@ -845,7 +855,7 @@ setMethod(f="as.sparse", signature=signature(x="DenseBrainVector", mask="Logical
             
             vdim <- dim(x)[1:3]
             dat <- as.matrix(x)[mask == TRUE,]
-            bvec <- SparseBrainVector(dat, space(x), logivol)
+            bvec <- SparseBrainVector(dat, space(x), mask)
             
           })
 

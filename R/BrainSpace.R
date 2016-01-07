@@ -3,6 +3,7 @@
 #' @include Axis.R
 {}
 
+
 #' Constructor function for \code{\linkS4class{BrainSpace}} class
 #' 
 #' @param Dim a vector describing the dimensions of the spatial grid
@@ -37,8 +38,12 @@ BrainSpace <- function(Dim, spacing=NULL, origin=NULL, axes=NULL, trans=NULL) {
 		trans[1:D,D+1] <- origin
 	}
   
-	if (is.null(axes)) {
+	if (is.null(axes) && length(Dim) >= 3) {
 	  axes <- .nearestAnatomy(trans)
+	} else if (is.null(axes) && length(Dim) == 2) {
+	  ### need .nearestAnatomy for 2d slice
+	  ## TODO
+	  axes <- AxisSet2D(LEFT_RIGHT, POST_ANT)
 	}
 	
 	new("BrainSpace", Dim=as.integer(Dim),
@@ -73,24 +78,45 @@ setMethod(f="show", signature=signature("BrainSpace"),
 #' @rdname addDim-methods
 setMethod(f="addDim", signature=signature(x = "BrainSpace", n="numeric"),
 		def=function(x, n) {
-			BrainSpace(c(dim(x), n), origin(x), spacing(x), axes(x), trans(x))
+			BrainSpace(c(dim(x), n), origin=origin(x), spacing=spacing(x), axes=axes(x), trans=trans(x))
 		})
 
+
+#' @export
+#' @rdname dropDim-methods
+setMethod(f="dropDim", signature=signature(x="BrainSpace", dimnum="numeric"),
+          def=function(x, dimnum) {
+            D <- dim(x)
+            stopifnot(length(D) >= 2)
+            
+            Dind <- seq(1,length(D))[-dimnum]
+            if (ndim(x) > 3) {
+              BrainSpace(D[Dind], origin=origin(x)[Dind], spacing=spacing(x)[Dind], axes=axes(x), trans=trans(x))
+            } else {
+              tx <- trans(x)
+              tx <- rbind(cbind(tx[Dind,Dind], origin(x)[Dind]), c(rep(0, length(Dind)), 1))
+              BrainSpace(D[Dind], origin=origin(x)[Dind], spacing=spacing(x)[Dind], axes=dropDim(axes(x), dimnum), trans=tx)
+            }
+            
+          })
 
 #' @export
 #' @rdname dropDim-methods
 setMethod(f="dropDim", signature=signature(x = "BrainSpace", dimnum="missing"),
 		def=function(x) {			
 			D <- dim(x)		
-			stopifnot(length(D) > 2)
+			stopifnot(length(D) >= 2)
 			Dind <- 1:(length(D)-1)		
 			
+			
 			### doesn't drop dimension in transformation matrix...
-      ### brain vector's don't have th axis and tese are incorrectly dropped
-      if (ndim(x) == 4) {
+      ### brain vector's don't have th axis and these are incorrectly dropped
+      if (ndim(x) > 3) {
 			  BrainSpace(D[Dind], origin=origin(x)[Dind], spacing=spacing(x)[Dind], axes=axes(x), trans=trans(x))
       } else {
-        BrainSpace(D[Dind], origin=origin(x)[Dind], spacing=spacing(x)[Dind], axes=dropDim(axes(x)), trans=trans(x))
+        tx <- trans(x)
+        tx <- rbind(cbind(tx[Dind,Dind], origin(x)[Dind]), c(rep(0, length(Dind)),1))
+        BrainSpace(D[Dind], origin=origin(x)[Dind], spacing=spacing(x)[Dind], axes=dropDim(axes(x)), trans=tx)
       }
 		})
 
@@ -144,8 +170,7 @@ setMethod(f="indexToCoord", signature=signature(x="BrainSpace", idx="index"),
           def=function(x, idx) {
             grid <- indexToGrid(x, idx) - .5
             res <- trans(x) %*% t(cbind(grid, rep(1,nrow(grid))))
-            ## TODO assumes 3D coordinate
-            t(res[1:3,])
+            t(res[1:ndim(x),])
           })
 
 
@@ -176,6 +201,7 @@ setMethod(f="axisToIndex", signature=signature(x="BrainSpace", real="numeric", d
             floor(abs(real - bds[1])/(spacing(x)[dimNum]) + 1)
             
           })
+
  
 #' @export 
 #' @rdname coordToGrid-methods

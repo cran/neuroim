@@ -227,8 +227,7 @@ setMethod("eachVolume", signature=signature(x="SparseBrainVector", FUN="function
 			lapply(1:nrow(x@data), function(i) FUN(takeVolume(x, i), ...))					
 		})
 
-#' eachVolume
-#' 
+
 #' @export
 #' @rdname eachVolume-methods
 setMethod("eachVolume", signature=signature(x="SparseBrainVector", FUN="function", withIndex="missing", mask="LogicalBrainVolume"),
@@ -260,7 +259,6 @@ setMethod(f="eachSeries", signature=signature(x="SparseBrainVector", FUN="functi
 
             ret
           })
-
 
 
 #' @export  
@@ -467,6 +465,17 @@ setMethod(f="[", signature=signature(x = "SparseBrainVector", i = "numeric", j =
 			           
 })
 
+#' @export
+#' @rdname subVector-methods
+setMethod(f="subVector", signature=signature(x="SparseBrainVector", i="numeric"),
+          def=function(x, i) {
+            idx <- which(x@mask > 0)      
+            bspace <- dropDim(space(x))
+            
+            res <- lapply(i, function(i) x@data[i,])
+            res <- do.call("cbind", res)			
+            SparseBrainVector(res, bspace, x@mask)
+          })
 
 
  

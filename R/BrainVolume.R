@@ -97,7 +97,7 @@ DenseBrainVolume <- function(data, space, source=NULL, label="", indices=NULL) {
 	} 
 	
 	if (!all(dim(space) == dim(data))) {
-		stop("DenseBrainVolume: data and space argument must equal dimensions")
+		stop("DenseBrainVolume: data and space argument must have equal dimensions")
 	} 
 	
 	if (is.null(source)) {
@@ -186,13 +186,17 @@ ClusteredBrainVolume <- function(mask, clusters, labelMap=NULL, source=NULL, lab
 #' @param label a \code{character} string
 #' @return \code{\linkS4class{SparseBrainVolume}} instance 
 #' @export SparseBrainVolume
+#' @details 
+#' Image data is backed by \code{Matrix::sparseVector}. 
 #' @examples
 #' data <- 1:10
-#' indices = seq(1,1000, length.out=10)
+#' indices <- seq(1,1000, length.out=10)
 #' bspace <- BrainSpace(c(64,64,64), spacing=c(1,1,1))
 #' sparsevol <- SparseBrainVolume(data,bspace,indices=indices)
 #' densevol <- BrainVolume(data,bspace,indices=indices)
 #' sum(sparsevol) == sum(densevol)
+#' 
+#' 
 #' 
 #' @rdname SparseBrainVolume-class
 SparseBrainVolume <- function(data, space, indices=NULL, source=NULL, label="") {
@@ -283,6 +287,7 @@ setAs(from="SparseBrainVolume", to="numeric", def=function(from) {
 
 
 #' Convert SparseBrainVolume to numeric
+#' 
 #' @rdname as.numeric-methods
 #' @param x the object to convert
 #' @export 
@@ -397,7 +402,8 @@ BrainVolumeSource <- function(input, index=1) {
 	
 }
 
-#' load an image volume from a file
+#' Load an image volume from a file
+#' 
 #' @param fileName the name of the file to load
 #' @param index the index of the volume (e.g. if the file is 4-dimensional)
 #' @return an instance of the class \code{\linkS4class{DenseBrainVolume}}
@@ -483,6 +489,8 @@ setMethod(f="slice", signature=signature(x="BrainVolume", zlevel="numeric", alon
                               "1"=x[zlevel,,],
                               "2"=x[,zlevel,],
                               "3"=x[,,zlevel])
+            
+            BrainSlice(imslice, dropDim(space(x), along))
             
             
           })
@@ -635,7 +643,7 @@ setMethod(f="map", signature=signature(x="BrainVolume", m="Kernel"),
             zdim <- dim(x)[3]
             
             if (!is.null(mask)) {
-              if (!all.equal(dim(mask), dim(vol))) {
+              if (!all.equal(dim(mask), dim(ovol))) {
                 stop(paste("mask must have same dimensions as input volume"))
               }
               # TODO check that mask is same shape as volume
@@ -661,6 +669,8 @@ setMethod(f="map", signature=signature(x="BrainVolume", m="Kernel"),
 #' tesselate a LogicalBrainVolume into K spatial disjoint components
 #' @param features use addiitonal feature set to tesselate volume
 #' @param spatialWeight weight voxels according to distance
+#' @importFrom stats kmeans
+#' @importFrom stats sd
 #' @rdname tesselate-methods
 setMethod(f="tesselate", signature=signature(x="LogicalBrainVolume", K="numeric"), 
           def=function(x, K, features=NULL, spatialWeight=4) {
@@ -694,11 +704,12 @@ setMethod(f="numClusters", signature=signature(x="ClusteredBrainVolume"),
 
 
 #' @rdname clusterCenters-methods
+#' @import parallel
 #' @export
 setMethod(f="clusterCenters", signature=signature(x="ClusteredBrainVolume", features="matrix", FUN="missing"), 
           def=function(x, features) {
             cmap <- x@clusterMap
-            res <- mclapply(sort(as.integer(names(cmap))), function(cnum) {
+            res <- parallel::mclapply(sort(as.integer(names(cmap))), function(cnum) {
               idx <- cmap[[as.character(cnum)]]
               mat <- features[idx,]
               colMeans(mat)
@@ -713,6 +724,7 @@ setMethod(f="clusterCenters", signature=signature(x="ClusteredBrainVolume", feat
 
 #' merge partititons in a ClusteredBrainVolume
 #' @rdname mergePartitions-methods
+#' @importFrom stats kmeans
 #' @export
 setMethod(f="mergePartitions", signature=signature(x="ClusteredBrainVolume", K="numeric", features="matrix"), 
           def=function(x, K, features) {
@@ -732,6 +744,8 @@ setMethod(f="mergePartitions", signature=signature(x="ClusteredBrainVolume", K="
 
 #' partition a \code{ClusteredBrainVolume} into K spatial disjoint components for every existing partition in the volume
 #' @param method clustering method
+#' @import parallel
+#' @importFrom stats kmeans
 #' @rdname partition-methods
 #' @export
 setMethod(f="partition", signature=signature(x="ClusteredBrainVolume", K="numeric", features="matrix"), 
@@ -739,7 +753,7 @@ setMethod(f="partition", signature=signature(x="ClusteredBrainVolume", K="numeri
             cmap <- x@clusterMap
             cnums <- sort(as.integer(names(cmap)))
             
-            kres <- mclapply(cnums, function(cnum) {
+            kres <- parallel::mclapply(cnums, function(cnum) {
               idx <- cmap[[as.character(cnum)]]
               fmat <- features[idx,]
               kmeans(fmat, centers=K)
